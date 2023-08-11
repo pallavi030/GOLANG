@@ -3,46 +3,86 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"net"
+	"os"
+	"time"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
+	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
-func main() {
-	
-	brokerAddress := "mqtt-dashboard.com:8884"
+type InterfaceInfo struct {
+	Interface string `json:"interface"`
+	MAC       string `json:"mac"`
+	IP        string `json:"ip"`
+}
 
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker(brokerAddress)
-	client := mqtt.NewClient(opts)
+type MQTTMessage struct {
+	MessageID   string           `json:"messageID"`
+	Interfaces  []InterfaceInfo `json:"interfaces"`
+}
 
-	
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		log.Fatal(token.Error())
-	}
-
-	
-	message := map[string]interface{}{
-		"messageID": "interfaces",
-		"data": map[string]string{
-			"interface": "Wi-Fi",
-			"mac": "B0-A4-60-EB-2E-40",
-		},
-	}
-
-	
-	messageString, err := json.Marshal(message)
+func getInterfaces() ([]InterfaceInfo, error) {
+	interfaces, err := net.Interfaces()
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	// Publish the message to a topic
-	topic := "Communication"
-	token := client.Publish(topic, 0, false, messageString)
+	var interfaceInfo []InterfaceInfo
+
+	for _, iface := range interfaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, addr := range addrs {
+			ip, _, err := net.ParseCIDR(addr.String())
+			if err != nil {
+				return nil, err
+			}
+
+			if ip.To4() != nil {
+				interfaceInfo = append(interfaceInfo, InterfaceInfo{
+					Interface: iface.Name,
+					MAC:       iface.HardwareAddr.String(),
+					IP:        ip.String(),
+				})
+			}
+		}
+	}
+
+	return interfaceInfo, nil
+}
+
+func main() {
+	opts := MQTT.NewClientOptions().AddBroker("tcp://mqtt-dashboard.com:8884")
+	opts.SetClientID("goClient")
+
+	client := MQTT.NewClient(opts)
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		panic(token.Error())
+	}
+
+	interfaceInfo, err := getInterfaces()
+	if err != nil {
+		fmt.Println("Error fetching network interfaces:", err)
+		os.Exit(1)
+	}
+
+	message := MQTTMessage{
+		MessageID:   "interfaces",
+		Interfaces:  interfaceInfo,
+	}
+
+	jsonMessage, err := json.Marshal(message)
+	if err != nil {
+		fmt.Println("Error encoding JSON:", err)
+		os.Exit(1)
+	}
+
+	token := client.Publish("mqtt/topic", 0, false, jsonMessage)
 	token.Wait()
 
-	fmt.Println("Message sent:", string(messageString))
-
-	
 	client.Disconnect(250)
+	fmt.Println("Message sent successfully.")
 }
