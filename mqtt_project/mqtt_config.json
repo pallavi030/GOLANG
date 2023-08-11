@@ -1,0 +1,6 @@
+{
+  "mqtt_url": "wss://broker.mqttdashboard.com:8000/mqtt",
+  "mqtt_username": "your_username",
+  "mqtt_password": "your_password",
+  "mqtt_topic": "mqtt/topic"
+}
