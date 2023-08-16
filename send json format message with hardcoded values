@@ -16,7 +16,7 @@ func main() {
         "key2": "value2",
     }
 
-    // Marshal the data into a JSON string
+    
     jsonData, err := json.Marshal(data)
     if err != nil {
         panic(err)
